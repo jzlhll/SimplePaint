@@ -18,7 +18,7 @@ The packaged macOS download is only **2 MB**. Requires macOS 13 or later.
 
 ### Web
 
-Use [SimplePaint in your browser](https://jzlhll.github.io/MacSimplePaint/).
+Use [SimplePaint in your browser](https://jzlhll.github.io/SimplePaint/).
 
 From the repository root, run:
 
@@ -28,7 +28,7 @@ python3 -m http.server 8080 --directory web
 
 Open [http://localhost:8080](http://localhost:8080) in a current browser. The app can also be served by any static host. Images are processed locally in the browser; saving downloads PNG, JPEG, or WebP files. System clipboard access requires HTTPS or localhost and browser permission; the editor also keeps an internal clipboard.
 
-The editor layout has a minimum size of **1200 × 800**; smaller browser windows can scroll. This is independent of the image dimensions, which default to 1200 × 800 pixels and can be changed. The status row sits below New/Open/Save, and appearance follows the browser by default, with manual light/dark overrides.
+The editor layout has a minimum size of **1200 × 640**; smaller browser windows can scroll. Tools and the canvas scroll independently, with visible scrollbars when their contents overflow. This is independent of the image dimensions, which default to 1200 × 800 pixels and can be changed. The status row sits below New/Open/Save, and appearance follows the browser by default, with manual light/dark overrides.
 
 GitHub Pages serves the root of the `gh-pages` branch. For a web release, tag the source version and publish the files inside `web/` to that branch. Regular `main` pushes do not update the published app.
 

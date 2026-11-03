@@ -64,10 +64,10 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
 
     init(document: PaintDocument) {
         paintDocument = document
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 900),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 800),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: window)
-        window.minSize = NSSize(width: 980, height: 760)
+        window.minSize = NSSize(width: 980, height: 640)
         window.title = L("轻绘")
         window.backgroundColor = Theme.panel
         window.contentView = ThemeSurfaceView(color: Theme.panel)
