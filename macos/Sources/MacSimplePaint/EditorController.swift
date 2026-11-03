@@ -9,12 +9,12 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
     let scrollView = NSScrollView()
     var tool: PaintTool = .brush
     var color = NSColor(hex: Theme.palette[0])
-    var brushSize: CGFloat = 6
+    var brushSize: CGFloat = 3
     var fillShapes = false
     var fontSize: CGFloat = 32
     private var textFontFamily: String?
-    private let railWidth: CGFloat = 113.4
-    private let inspectorWidth: CGFloat = 129
+    private let railWidth: CGFloat = 136.08
+    private let inspectorWidth: CGFloat = 135.45
     private let brushControls = stack([], vertical: true, spacing: 6)
     private let textControls = stack([], vertical: true, spacing: 6)
     private var drawingFont: NSFont {
@@ -29,17 +29,22 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
     private var paletteButtons: [SwatchButton] = []
     private var recentButtons: [SwatchButton] = []
     private var recentColors: [String] = []
-    private let currentSwatch = SwatchButton(color: NSColor(hex: Theme.palette[0]), size: 40)
-    private let hexField = NSTextField(string: "#" + Theme.palette[0])
-    private let sizeSlider = NSSlider(value: 6, minValue: 1, maxValue: 48, target: nil, action: nil)
-    private let sizeLabel = label("6 px", size: 12, weight: .medium, color: Theme.sizeText)
+    private let lineGroup = stack([], vertical: true, spacing: 4)
+    private let shapeGroup = stack([], vertical: true, spacing: 4)
+    private var visibleLines: [PaintTool] = []
+    private var visibleShapes: [PaintTool] = []
+    private let colorFormatControl = NSSegmentedControl(labels: ["HEX", "RGB"], trackingMode: .selectOne, target: nil, action: nil)
+    private var colorDisplayRGB = UserDefaults.standard.string(forKey: "simplepaint.colorDisplay") == "rgb"
+    private let currentSwatch = SwatchButton(color: NSColor(hex: Theme.palette[0]), size: 36, stretchVertically: true)
+    private let hexField = NSTextField(string: "#000000")
+    private let sizeSlider = NSSlider(value: 3, minValue: 1, maxValue: 48, target: nil, action: nil)
+    private let sizeLabel = label("3 px", size: 12, weight: .medium, color: Theme.sizeText)
     private let fontSizeLabel = label("32 px", size: 12, weight: .medium, color: Theme.sizeText)
     private let statusLabel = label(L("画笔 · 拖动开始绘画"), size: 11, color: Theme.secondary)
     private let tipLabel = label("", size: 10, color: Theme.secondary)
     private var tipTimer: Timer?
     private let usageTips = [
         L("⌘V 可直接粘贴图片"),
-        L("按 [ / ] 调整笔画粗细"),
         L("将图片拖入窗口即可打开"),
         L("选中的内容可以连续拖动"),
         L("按住 Shift 约束形状比例或角度"),
@@ -64,6 +69,9 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
 
     init(document: PaintDocument) {
         paintDocument = document
+        UserDefaults.standard.removeObject(forKey: "simplepaint.usage.lines.v1")
+        UserDefaults.standard.removeObject(forKey: "simplepaint.usage.shapes.v1")
+        UserDefaults.standard.removeObject(forKey: "simplepaint.usage.colors.v1")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 800),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         super.init(window: window)
@@ -78,13 +86,7 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         window.center()
         canvas.editor = self
         stage.editor = self
-        let storedColors = UserDefaults.standard.stringArray(forKey: "recentCustomColors") ?? []
-        recentColors = Array(storedColors.filter {
-            $0.count == 6 && UInt32($0, radix: 16) != nil
-        }.prefix(3))
-        if recentColors != storedColors {
-            UserDefaults.standard.set(recentColors, forKey: "recentCustomColors")
-        }
+        recentColors = Array((UserDefaults.standard.stringArray(forKey: "recentCustomColors") ?? []).filter { $0.count == 6 && UInt32($0, radix: 16) != nil }.prefix(3))
         buildInterface()
         refreshColors()
         refreshCanvas()
@@ -376,7 +378,13 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         zoomLabel.alignment = .center
         zoomLabel.fixed(width: 48)
         let appearanceButtons = stack(AppearanceMode.allCases.map { AppearanceButton(mode: $0) }, spacing: 3)
-        let status = stack([statusLabel, NSView(), dimensionLabel, separator(vertical: true), minus, zoomLabel, plus, fit, separator(vertical: true), appearanceButtons], spacing: 10)
+        let resize = ActionButton("", symbol: "square.and.pencil", symbolWeight: .regular) { [weak self] in self?.resizeCanvas(nil) }
+        resize.style = .plain
+        resize.fixed(width: 24, height: 24)
+        resize.setAccessibilityLabel(L("调整画布尺寸"))
+        resize.toolTip = L("调整画布尺寸")
+        let dimensions = stack([dimensionLabel, resize], spacing: 4)
+        let status = stack([statusLabel, NSView(), dimensions, separator(vertical: true), minus, zoomLabel, plus, fit, separator(vertical: true), appearanceButtons], spacing: 10)
         footer.addSubview(status)
         status.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -412,13 +420,30 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
                 if tool == .more || tool == .moreLines, let button { self.showMoreShapes(from: button, lines: tool == .moreLines) }
                 else { self.selectTool(tool) }
             }
-            button.selected = tool == self.tool
+            button.selected = tool == self.tool || (tool == .moreLines && self.tool.isLine && !visibleLines.contains(self.tool)) || (tool == .more && self.tool.isShape && !visibleShapes.contains(self.tool))
             toolButtons[tool] = button
             return button
-        }, spacing: 4)
-        // 滚动条占用横向空间时，两列按钮均分剩余宽度，避免背景被裁切。
+        }, spacing: 2)
+        // 三列按钮均分剩余空间，避免滚动条挤压后裁切背景。
         row.distribution = .fillEqually
         return row
+    }
+
+    private func refreshToolGroups() {
+        let line = UserDefaults.standard.string(forKey: "simplepaint.visibleLine").flatMap(PaintTool.init(rawValue:))
+        let shape = UserDefaults.standard.string(forKey: "simplepaint.visibleShape").flatMap(PaintTool.init(rawValue:))
+        visibleLines = Array(PaintTool.defaultLines.prefix(4)) + [line.flatMap { PaintTool.additionalLines.contains($0) ? $0 : nil } ?? PaintTool.defaultLines[4]]
+        visibleShapes = Array(PaintTool.defaultShapes.prefix(4)) + [shape.flatMap { PaintTool.additionalShapes.contains($0) ? $0 : nil } ?? PaintTool.defaultShapes[4]]
+        let oldKeys = toolButtons.keys.filter { $0.isLine || $0.isShape || $0 == .more || $0 == .moreLines }
+        oldKeys.forEach { toolButtons.removeValue(forKey: $0) }
+        for (group, tools) in [(lineGroup, visibleLines + [.moreLines]), (shapeGroup, visibleShapes + [.more])] {
+            group.arrangedSubviews.forEach { group.removeArrangedSubview($0); $0.removeFromSuperview() }
+            for index in stride(from: 0, to: tools.count, by: 3) {
+                let row = toolRow(Array(tools[index..<Swift.min(index + 3, tools.count)]))
+                group.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: group.widthAnchor).isActive = true
+            }
+        }
     }
 
     private func sectionHeading(_ title: String) -> NSView {
@@ -483,12 +508,11 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         fillControl.onChange = { [weak self] filled in self?.fillShapes = filled }
         let sizeTopSpacing = NSView()
         sizeTopSpacing.fixed(height: 16)
+        refreshToolGroups()
         let groups: [NSView] = [label(L("绘图工具"), size: 11, weight: .semibold, color: Theme.secondary),
-            toolRow([.brush, .pencil]), toolRow([.eraser, .fill]), toolRow([.picker, .text]),
-            separator(), sectionHeading("线条"), toolRow([.line, .dashedLine]),
-            toolRow([.arrow, .doubleArrow]), toolRow([.dashedArrow, .moreLines]), separator(),
-            sectionHeading("形状"), fillControl, toolRow([.rectangle, .roundedRectangle]),
-            toolRow([.ellipse, .ellipseBubble]), toolRow([.heart, .more]), separator(), sizeTopSpacing] + buildTextControls()
+            toolRow([.brush, .pencil, .eraser]), toolRow([.fill, .picker, .text]),
+            separator(), sectionHeading("线条"), lineGroup, separator(),
+            sectionHeading("形状"), fillControl, shapeGroup, separator(), sizeTopSpacing] + buildTextControls()
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.scrollerStyle = .overlay
@@ -534,7 +558,7 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = false
-        popover.contentViewController = ShapePickerController(selected: tool, lines: lines) { [weak self, weak popover] shape in
+        popover.contentViewController = ShapePickerController(selected: tool, lines: lines, tools: (lines ? PaintTool.additionalLines : PaintTool.additionalShapes)) { [weak self, weak popover] shape in
             self?.selectTool(shape)
             popover?.close()
         }
@@ -544,30 +568,43 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
 
     private func buildInspector(in parent: NSView) {
         let colorTitle = label(L("颜色"), size: 11, weight: .semibold, color: Theme.secondary)
-        hexField.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
-        hexField.fixed(width: inspectorWidth - 16, height: 22)
+        hexField.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
         hexField.cell?.isScrollable = true
         hexField.cell?.wraps = false
-        hexField.setContentCompressionResistancePriority(.required, for: .horizontal)
+        hexField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         hexField.textColor = Theme.ink
         hexField.isBezeled = false
         hexField.drawsBackground = false
         hexField.focusRingType = .none
         hexField.target = self
         hexField.action = #selector(hexChanged(_:))
-        hexField.setAccessibilityLabel(L("十六进制颜色"))
         currentSwatch.handler = { [weak self] in self?.showColorPanel(nil) }
         currentSwatch.toolTip = L("打开系统色卡")
-        let current = stack([currentSwatch, hexField], vertical: true, spacing: 4)
+        let copy = ActionButton("", symbol: "doc.on.doc", symbolWeight: .regular) { [weak self] in self?.copyColorValue() }
+        copy.style = .plain
+        copy.fixed(width: 16, height: 22)
+        copy.setAccessibilityLabel(L("复制色值"))
+        copy.toolTip = L("复制色值")
+        let valueRow = stack([hexField, copy], spacing: 2)
+        colorFormatControl.controlSize = .mini
+        colorFormatControl.segmentStyle = .rounded
+        colorFormatControl.font = .systemFont(ofSize: 9)
+        colorFormatControl.setWidth(34, forSegment: 0); colorFormatControl.setWidth(34, forSegment: 1)
+        colorFormatControl.selectedSegment = colorDisplayRGB ? 1 : 0
+        colorFormatControl.target = self
+        colorFormatControl.action = #selector(colorFormatChanged(_:))
+        colorFormatControl.setAccessibilityLabel(L("色值格式"))
+        let details = stack([valueRow, colorFormatControl], vertical: true, spacing: 2)
+        valueRow.widthAnchor.constraint(equalTo: details.widthAnchor).isActive = true
+        let current = stack([currentSwatch, details], spacing: 4)
+        current.alignment = .top
+        currentSwatch.bottomAnchor.constraint(equalTo: details.bottomAnchor).isActive = true
         let palette = stack([], vertical: true, spacing: 6)
-        for row in 0..<4 {
-            let buttons = Theme.palette[(row * 3)..<(row * 3 + 3)].map { value -> NSView in
-                let button = SwatchButton(color: NSColor(hex: value), size: 28)
-                button.toolTip = "#" + value
-                button.setAccessibilityLabel(L("预设颜色 #") + value)
-                button.handler = { [weak self] in self?.chooseColor(NSColor(hex: value)) }
-                paletteButtons.append(button)
-                return button
+        for _ in 0..<4 {
+            var buttons: [NSView] = []
+            for _ in 0..<3 {
+                let button = SwatchButton(color: nil, size: 28)
+                paletteButtons.append(button); buttons.append(button)
             }
             let row = inspectorRow(buttons, columns: 3)
             palette.addArrangedSubview(row)
@@ -576,10 +613,7 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         let custom = ActionButton(L("更多颜色…")) { [weak self] in self?.showColorPanel(nil) }
         custom.style = .quiet
         custom.fixed(width: inspectorWidth - 16, height: 30)
-        for _ in 0..<3 {
-            let button = SwatchButton(color: nil, size: 28)
-            recentButtons.append(button)
-        }
+        for _ in 0..<3 { recentButtons.append(SwatchButton(color: nil, size: 28)) }
         let recentRow = inspectorRow(recentButtons, columns: 3)
         toolLabel.fixed(width: inspectorWidth - 16)
         toolLabel.maximumNumberOfLines = 2
@@ -592,7 +626,6 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         crop.isEnabled = false
         let clear = RailActionButton(kind: .clear) { [weak self] _ in self?.clearCanvas(nil) }
         let rotate = RailActionButton(kind: .rotate) { [weak self] _ in self?.rotateClockwise(nil) }
-        let resize = RailActionButton(kind: .resize) { [weak self] _ in self?.resizeCanvas(nil) }
         let more = RailActionButton(kind: .more) { [weak self] button in self?.showCanvasActions(from: button) }
         let selectionTool = toolRow([.selection])
         selectionTool.fixed(width: 44)
@@ -602,7 +635,7 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         let items: [NSView] = [toolLabel, toolTaglineLabel,
             separator(), colorTitle, current, palette, recentRow, custom,
             separator(), selectionHeading, selectionRow,
-            inspectorRow([clear, rotate], columns: 2), inspectorRow([resize, more], columns: 2)]
+            inspectorRow([clear, rotate], columns: 2), inspectorRow([more], columns: 2)]
         let content = stack(items, vertical: true, spacing: 9)
         parent.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
@@ -639,8 +672,11 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
     func selectTool(_ tool: PaintTool) {
         canvas.finishGesture()
         self.tool = tool
+        if PaintTool.additionalLines.contains(tool) { UserDefaults.standard.set(tool.rawValue, forKey: "simplepaint.visibleLine") }
+        else if PaintTool.additionalShapes.contains(tool) { UserDefaults.standard.set(tool.rawValue, forKey: "simplepaint.visibleShape") }
+        refreshToolGroups()
         if tool != .selection { canvas.selection = nil }
-        toolButtons.forEach { $0.value.selected = $0.key == tool || ($0.key == .more && tool.isExtraShape && ![PaintTool.ellipseBubble, .heart].contains(tool)) || ($0.key == .moreLines && tool.isLine && ![PaintTool.line, .dashedLine, .arrow, .doubleArrow, .dashedArrow].contains(tool)) }
+        toolButtons.forEach { $0.value.selected = $0.key == tool || ($0.key == .more && tool.isShape && !visibleShapes.contains(tool)) || ($0.key == .moreLines && tool.isLine && !visibleLines.contains(tool)) }
         toolButtons[.more]?.toolTip = tool.isExtraShape ? L("更多形状 · ") + tool.title : L("更多形状")
         brushControls.isHidden = tool == .text
         textControls.isHidden = tool != .text
@@ -651,9 +687,26 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         updateStatus()
     }
 
-    func chooseColor(_ color: NSColor, remember: Bool = false) {
+    private var colorValue: String {
+        if !colorDisplayRGB { return "#" + color.hex }
+        let value = UInt32(color.hex, radix: 16) ?? 0
+        return "\((value >> 16) & 255),\((value >> 8) & 255),\(value & 255)"
+    }
+
+    private func copyColorValue() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(colorDisplayRGB ? "rgb(" + colorValue + ")" : colorValue, forType: .string)
+    }
+
+    @objc private func colorFormatChanged(_ sender: NSSegmentedControl) {
+        colorDisplayRGB = sender.selectedSegment == 1
+        UserDefaults.standard.set(colorDisplayRGB ? "rgb" : "hex", forKey: "simplepaint.colorDisplay")
+        refreshColors()
+    }
+
+    func chooseColor(_ color: NSColor) {
         self.color = color.usingColorSpace(.sRGB) ?? .black
-        if remember && !Theme.palette.contains(self.color.hex) {
+        if !Theme.palette.contains(self.color.hex) {
             recentColors = UserDefaults.standard.stringArray(forKey: "recentCustomColors") ?? []
             recentColors.removeAll { $0 == self.color.hex }
             recentColors.insert(self.color.hex, at: 0)
@@ -666,8 +719,18 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
     private func refreshColors() {
         currentSwatch.swatch = color
         currentSwatch.needsDisplay = true
-        hexField.stringValue = "#" + color.hex
-        paletteButtons.forEach { $0.selected = $0.swatch?.hex == color.hex }
+        hexField.stringValue = colorValue
+        hexField.font = .monospacedSystemFont(ofSize: colorDisplayRGB ? 9 : 10, weight: .medium)
+        hexField.setAccessibilityLabel(L(colorDisplayRGB ? "RGB 颜色" : "十六进制颜色"))
+        let colors = Theme.palette
+        for (button, value) in zip(paletteButtons, colors) {
+            button.swatch = NSColor(hex: value)
+            button.selected = value == color.hex
+            button.toolTip = "#" + value
+            button.setAccessibilityLabel(L("预设颜色 #") + value)
+            button.handler = { [weak self] in self?.chooseColor(NSColor(hex: value)) }
+            button.needsDisplay = true
+        }
         for (index, button) in recentButtons.enumerated() {
             let value = index < recentColors.count ? recentColors[index] : nil
             button.swatch = value.map { NSColor(hex: $0) }
@@ -675,7 +738,7 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
             button.isEnabled = value != nil
             button.toolTip = value.map { "#" + $0 } ?? L("从色卡选取颜色后显示在这里")
             button.setAccessibilityLabel(value.map { L("最近颜色 #") + $0 } ?? L("空的最近颜色"))
-            button.handler = { [weak self] in if let value { self?.chooseColor(NSColor(hex: value), remember: true) } }
+            button.handler = { [weak self] in if let value { self?.chooseColor(NSColor(hex: value)) } }
             button.needsDisplay = true
         }
     }
@@ -689,15 +752,18 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         panel.color = color
         panel.orderFront(nil)
     }
-    @objc private func panelColorChanged(_ sender: NSColorPanel) { chooseColor(sender.color, remember: true) }
+    @objc private func panelColorChanged(_ sender: NSColorPanel) { chooseColor(sender.color) }
     @objc private func hexChanged(_ sender: NSTextField) {
-        let value = sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "").uppercased()
-        guard value.count == 6, UInt32(value, radix: 16) != nil else {
-            sender.stringValue = "#" + color.hex
-            NSSound.beep()
-            return
-        }
-        chooseColor(NSColor(hex: value), remember: true)
+        let text = sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value: String
+        if colorDisplayRGB {
+            let components = text.replacingOccurrences(of: "rgb(", with: "").replacingOccurrences(of: ")", with: "").split(separator: ",", omittingEmptySubsequences: false)
+            let parts = components.compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+            guard components.count == 3, parts.count == 3, parts.allSatisfy({ $0 >= 0 && $0 <= 255 }) else { refreshColors(); NSSound.beep(); return }
+            value = String(format: "%02X%02X%02X", parts[0], parts[1], parts[2])
+        } else { value = text.replacingOccurrences(of: "#", with: "").uppercased() }
+        guard value.count == 6, UInt32(value, radix: 16) != nil else { refreshColors(); NSSound.beep(); return }
+        chooseColor(NSColor(hex: value))
         window?.makeFirstResponder(canvas)
     }
     @objc private func sizeChanged(_ sender: NSSlider) { setBrushSize(CGFloat(sender.integerValue)) }
@@ -745,7 +811,7 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         dimensionLabel.stringValue = "\(bitmap.width) × \(bitmap.height) px"
         if let point {
             statusLabel.stringValue = "\(tool.title) · X \(Int(point.x))  Y \(Int(point.y))"
-        } else if let selection = canvas.selection {
+        } else if tool == .selection, let selection = canvas.selection {
             statusLabel.stringValue = L("选区 %ld × %ld px · 拖动移动 / Delete 删除", Int(selection.width), Int(selection.height))
         } else {
             let hints: [PaintTool: String] = [.selection: L("拖动框选 · 可移动、复制和裁剪"), .text: L("点击画布添加文字"), .fill: L("点击填充连通区域"), .picker: L("点击画布取色")]
@@ -782,7 +848,10 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
     }
     func windowDidResize(_ notification: Notification) { layoutCanvas() }
     func windowDidBecomeKey(_ notification: Notification) {
+        refreshToolGroups()
         recentColors = Array((UserDefaults.standard.stringArray(forKey: "recentCustomColors") ?? []).prefix(3))
+        colorDisplayRGB = UserDefaults.standard.string(forKey: "simplepaint.colorDisplay") == "rgb"
+        colorFormatControl.selectedSegment = colorDisplayRGB ? 1 : 0
         refreshColors()
         if NSColorPanel.shared.isVisible {
             NSColorPanel.shared.setTarget(self)
@@ -893,22 +962,22 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = L("调整画布尺寸")
-        alert.informativeText = L("修改像素尺寸。扩展画布会添加透明区域，缩小画布会裁去右侧和下方内容。")
+        alert.informativeText = L("原内容按原始像素贴在新画布左上角，超出右侧和下方的部分会裁掉。")
         alert.addButton(withTitle: L("应用"))
         alert.addButton(withTitle: L("取消"))
         let width = NSTextField(string: "\(paintDocument.bitmap.width)")
         let height = NSTextField(string: "\(paintDocument.bitmap.height)")
         width.fixed(width: 110); height.fixed(width: 110)
-        let scale = NSButton(checkboxWithTitle: L("同时缩放图片内容"), target: nil, action: nil)
-        let fields = stack([stack([label(L("宽度")), width, label(L("高度")), height]), scale], vertical: true, spacing: 16)
-        fields.frame = NSRect(x: 0, y: 0, width: 350, height: 72)
+        width.setAccessibilityLabel(L("宽度")); height.setAccessibilityLabel(L("高度"))
+        let fields = stack([label(L("宽度")), width, label(L("高度")), height])
+        fields.frame = NSRect(x: 0, y: 0, width: 350, height: 36)
         alert.accessoryView = fields
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self else { return }
             do {
                 guard let w = Int(width.stringValue), let h = Int(height.stringValue) else { throw PaintError.message(L("请输入有效的整数尺寸。")) }
                 try Bitmap.validate(width: w, height: h)
-                self.paintDocument.replace(with: self.paintDocument.bitmap.resized(width: w, height: h, scaleImage: scale.state == .on), action: L("调整画布"))
+                self.paintDocument.replace(with: self.paintDocument.bitmap.resized(width: w, height: h, scaleImage: false), action: L("调整画布"))
                 self.fitCanvas(nil)
             } catch { window.presentError(error) }
         }
@@ -959,7 +1028,6 @@ final class EditorController: NSWindowController, NSWindowDelegate, NSMenuItemVa
             bitmap.paste(content, at: insertionPoint)
             self.paintDocument.bitmap = bitmap
             self.paintDocument.commit(previous: previous, action: L("添加文字"))
-            self.selectTool(.selection)
             self.canvas.makeFloatingSelection(content: content, background: background, at: insertionPoint)
         }
         alert.window.makeFirstResponder(text)

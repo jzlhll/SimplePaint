@@ -141,7 +141,7 @@ final class CanvasView: NSView {
         start = point
         previous = point
         if editor.tool == .picker {
-            if let color = editor.paintDocument.bitmap.color(at: point) { editor.chooseColor(color, remember: true) }
+            if let color = editor.paintDocument.bitmap.color(at: point) { editor.chooseColor(color) }
             return
         }
         if editor.tool == .text { editor.insertText(at: point); return }
@@ -229,7 +229,6 @@ final class CanvasView: NSView {
         if let selection, selection.width < 1 || selection.height < 1 { self.selection = nil }
         editor.paintDocument.commit(previous: snapshot, action: action, preserveSelection: editor.tool == .selection)
         if let shape {
-            editor.selectTool(.selection)
             makeFloatingSelection(content: shape.content, background: snapshot, at: shape.origin, tool: shapeTool)
         }
     }
@@ -315,8 +314,6 @@ final class CanvasView: NSView {
            let tool = PaintTool.allCases.first(where: { !$0.shortcut.isEmpty && $0.shortcut == character }) {
             editor.selectTool(tool); return
         }
-        if event.characters == "[" { editor.setBrushSize(Swift.max(1, editor.brushSize - 1)); return }
-        if event.characters == "]" { editor.setBrushSize(Swift.min(48, editor.brushSize + 1)); return }
         super.keyDown(with: event)
     }
     @objc func copy(_ sender: Any?) { editor?.copySelection(sender) }

@@ -8,6 +8,12 @@
 - 构建并安装使用 `python3 macos/scripts/install_macos.py`；已有最新构建时使用 `python3 macos/scripts/install_macos.py --skip-build`。替换前正常退出安装版，保留用户文档与未保存内容；遇到保存提示时等待用户处理，禁止强制结束进程或丢弃用户内容。
 - 构建产物必须先在临时目录完整打包签名，再整包切换；旧包保留于 `macos/.build/retired-apps`，禁止原地覆盖运行中的二进制或重签正在运行的应用。
 
+# 双端问题排查与复查
+
+- 用户每次提出问题，都必须检查 macOS 与网页两端的对应实现和实际行为；即使用户只提到其中一端，也不能默认另一端没有同类问题。
+- 分别确认问题在两端是否存在，并按当前请求范围处理；执行修复时，同类问题涉及两端的，必须同步修复，保留必要的平台差异。
+- 处理完成后必须复查两端，即使本次只修改一端，也要检查另一端对应功能。某端不适用或无法完成必要复查时，应明确说明具体原因，不得将未检查视为通过。
+
 # Pages 关联仓库与同步发布
 
 - SimplePaint 源码仓库为 `jzlhll/SimplePaint`，本地目录为 `/Users/allan/codes/MacSimplePaint`；网页版地址为 https://jzlhll.github.io/SimplePaint/ ，由 `gh-pages` 分支根目录发布 `web/` 内的静态文件，源码版本使用 `webapp` 标签记录。

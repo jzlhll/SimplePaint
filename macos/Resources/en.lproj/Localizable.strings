@@ -2,7 +2,6 @@
 "移动选区" = "Move Selection";
 "画笔 · 拖动开始绘画" = "Brush · Drag to draw";
 "⌘V 可直接粘贴图片" = "⌘V pastes an image";
-"按 [ / ] 调整笔画粗细" = "Use [ / ] to adjust stroke width";
 "将图片拖入窗口即可打开" = "Drag an image into the window to open it";
 "按住 Shift 约束形状比例或角度" = "Hold Shift to constrain proportions or angles";
 "⌘Z 撤销，⇧⌘Z 重做" = "⌘Z undoes; ⇧⌘Z redoes";
@@ -225,3 +224,8 @@
 "深色模式" = "Dark mode";
 
 "浅色模式" = "Light mode";
+
+"复制色值" = "Copy Color Value";
+"色值格式" = "Color Format";
+"RGB 颜色" = "RGB Color";
+"原内容按原始像素贴在新画布左上角，超出右侧和下方的部分会裁掉。" = "Original pixels stay at the top-left of the new canvas. Content beyond its right and bottom edges is cropped.";

@@ -171,8 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             "B " + PaintTool.brush.title + " · P " + PaintTool.pencil.title + " · E " + PaintTool.eraser.title,
             "G " + PaintTool.fill.title + " · I " + PaintTool.picker.title + " · T " + PaintTool.text.title,
             "M " + PaintTool.selection.title + " · L " + PaintTool.line.title + " · D " + PaintTool.dashedLine.title,
-            "R " + PaintTool.rectangle.title + " · O " + PaintTool.ellipse.title,
-            L("按 [ / ] 调整笔画粗细")
+            "R " + PaintTool.rectangle.title + " · O " + PaintTool.ellipse.title
         ].joined(separator: "\n")
         alert.informativeText = [L("help.intro"), shortcuts, L("help.gestures"), L("help.colors"), L("help.files")].joined(separator: "\n\n")
         alert.runModal()

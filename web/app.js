@@ -1,15 +1,27 @@
 import { drawingTools, basicLines, basicShapes, extraShapes, lineTools, shortcuts, title, tagline, isLine, drawLine, drawShape, icon } from './drawing.js';
+import { createColorPicker } from './color-picker.js';
 
 const $ = selector => document.querySelector(selector);
 const canvas = $('#canvas'), overlay = $('#overlay');
 const ctx = canvas.getContext('2d', { willReadFrequently: true }), preview = overlay.getContext('2d');
 const app = $('#app'), viewport = $('#viewport'), wrap = $('#canvas-wrap');
 const state = {
-  tool: 'brush', color: '#263843', size: 6, fontSize: 32, font: 'system-ui', filled: false, zoom: .75,
+  tool: 'brush', color: '#263843', size: 3, fontSize: 32, font: 'system-ui', filled: false, zoom: .6,
   history: [], future: [], id: 0, savedId: 0, nextId: 1, selection: null, floating: null, gesture: null,
   busy: false, clipboard: null, recent: [], filename: '未命名.png',
 };
-const palette = ['263843', 'FFFFFF', '88929E', 'EE6469', 'F0A04C', 'E9CF54', '7CAC73', '339D92', '66B6CC', '588BC8', '9A83BB', 'D487AF'];
+const palette = ['#263843', '#FFFFFF', '#88929E', '#EE6469', '#F0A04C', '#E9CF54', '#7CAC73', '#339D92', '#66B6CC', '#588BC8', '#9A83BB', '#D487AF'];
+const allShapes = [...new Set([...basicShapes, ...extraShapes])];
+const fixedLines = basicLines.slice(0, 4), fixedShapes = basicShapes.slice(0, 4);
+const moreLines = [basicLines[4], ...lineTools.filter(tool => !basicLines.includes(tool))];
+const moreShapes = [basicShapes[4], ...allShapes.filter(tool => !basicShapes.includes(tool))];
+let extraLine = readPreference('simplepaint.visibleLine', basicLines[4]);
+let extraShape = readPreference('simplepaint.visibleShape', basicShapes[4]);
+if (!moreLines.includes(extraLine)) extraLine = basicLines[4];
+if (!moreShapes.includes(extraShape)) extraShape = basicShapes[4];
+try { for (const key of ['simplepaint.usage.lines.v1', 'simplepaint.usage.shapes.v1', 'simplepaint.usage.colors.v1']) localStorage.removeItem(key); } catch { /* 清理旧排序缓存失败不影响工具选择。 */ }
+let visibleLines = [], visibleShapes = [];
+let colorDisplay = readPreference('simplepaint.colorDisplay', 'hex') === 'rgb' ? 'rgb' : 'hex';
 let toastTimer;
 
 function readPreference(key, fallback) {
@@ -78,7 +90,6 @@ function update() {
   document.title = `${state.id === state.savedId ? '' : '* '}${state.filename} · 轻绘 SimplePaint`;
   $('#dimensions').textContent = `${canvas.width} × ${canvas.height} px`;
   $('#zoom').textContent = `${Math.round(state.zoom * 100)}%`;
-  $('#status').textContent = state.selection ? `选区 · ${state.selection.w} × ${state.selection.h} px · 拖动移动` : `${title(state.tool)} · ${state.tool === 'text' ? '点击画布添加文字' : '拖动开始绘画'}`;
   drawSelection();
 }
 function refreshLayout() { wrap.style.width = `${canvas.width * state.zoom}px`; wrap.style.height = `${canvas.height * state.zoom}px`; update(); }
@@ -109,9 +120,15 @@ function toolButton(tool, compact = false) {
   return button;
 }
 function selectTool(tool) {
-  finishGesture(); state.tool = tool; state.selection = null; state.floating = null; clearPreview();
+  finishGesture();
+  if (moreLines.includes(tool)) { extraLine = tool; preference('simplepaint.visibleLine', tool); }
+  else if (moreShapes.includes(tool)) { extraShape = tool; preference('simplepaint.visibleShape', tool); }
+  state.tool = tool;
+  renderToolGroups();
+  if (tool !== 'selection') { state.selection = null; state.floating = null; }
+  clearPreview();
   for (const button of document.querySelectorAll('[data-tool]')) {
-    const selected = button.dataset.tool === tool || (button.dataset.tool === 'more' && extraShapes.includes(tool) && !basicShapes.includes(tool)) || (button.dataset.tool === 'moreLines' && isLine(tool) && !basicLines.includes(tool));
+    const selected = button.dataset.tool === tool || (button.dataset.tool === 'more' && extraShapes.includes(tool) && !visibleShapes.includes(tool)) || (button.dataset.tool === 'moreLines' && isLine(tool) && !visibleLines.includes(tool));
     button.setAttribute('aria-pressed', String(selected));
   }
   $('#tool-title').textContent = title(tool); $('#tool-tagline').textContent = tagline(tool);
@@ -129,29 +146,55 @@ function openPopover(anchor, heading) {
 function showTools(anchor, lines) {
   const popover = openPopover(anchor, lines ? '更多线条' : '更多形状');
   const grid = document.createElement('div'); grid.className = 'popover-grid';
-  (lines ? lineTools : extraShapes).forEach(tool => grid.append(toolButton(tool, true))); popover.append(grid);
+  (lines ? moreLines : moreShapes).forEach(tool => grid.append(toolButton(tool, true))); popover.append(grid);
   // 加入内容后重新定位，避免短窗口中菜单超出可视区域。
   popover.style.top = `${Math.max(8, Math.min(innerHeight - popover.offsetHeight - 8, anchor.getBoundingClientRect().top))}px`;
 }
+function renderToolGroups() {
+  visibleLines = [...fixedLines, extraLine];
+  visibleShapes = [...fixedShapes, extraShape];
+  for (const [selector, tools] of [['#line-tools', [...visibleLines, 'moreLines']], ['#shape-tools', [...visibleShapes, 'more']]]) {
+    const container = $(selector); container.replaceChildren();
+    tools.forEach(tool => container.append(toolButton(tool, selector === '#line-tools')));
+  }
+}
+function colorValue() {
+  if (colorDisplay === 'hex') return state.color;
+  return state.color.slice(1).match(/../g).map(value => parseInt(value, 16)).join(',');
+}
+function refreshColorValue() {
+  $('#hex').value = colorValue(); $('#hex').dataset.format = colorDisplay;
+  $('#hex').setAttribute('aria-label', colorDisplay === 'hex' ? '十六进制颜色' : 'RGB 颜色');
+  document.querySelectorAll('[data-color-display]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.colorDisplay === colorDisplay)));
+}
 function chooseColor(color, recent = false) {
   if (!/^#[\da-f]{6}$/i.test(color)) return false;
-  state.color = color.toUpperCase(); $('#color-picker').value = color; $('#hex').value = state.color;
-  $('.current-color').style.background = color;
-  if (recent && !palette.includes(color.slice(1).toUpperCase())) {
-    state.recent = [state.color, ...state.recent.filter(item => item !== state.color)].slice(0, 3); preference('simplepaint.colors', state.recent);
+  state.color = color.toUpperCase(); refreshColorValue();
+  $('.current-color').style.background = state.color;
+  if (recent && !palette.includes(state.color)) {
+    state.recent = [state.color, ...state.recent.filter(value => value !== state.color)].slice(0, 3); preference('simplepaint.colors', state.recent);
   }
   renderPalette(); return true;
 }
+function colorButton(color, onPick) {
+  const button = document.createElement('button'); button.type = 'button'; button.className = 'swatch'; button.title = color; button.setAttribute('aria-label', `颜色 ${color}`);
+  button.style.background = color; button.style.setProperty('--swatch', color); button.setAttribute('aria-pressed', String(color === state.color));
+  button.addEventListener('click', () => onPick(color)); return button;
+}
 function renderPalette() {
-  for (const [selector, colors] of [['#palette', palette.map(value => '#' + value)], ['#recent-colors', state.recent]]) {
+  for (const [selector, colors] of [['#palette', palette], ['#recent-colors', state.recent]]) {
     const container = $(selector); container.replaceChildren();
-    colors.forEach(color => {
-      const button = document.createElement('button'); button.className = 'swatch'; button.title = color; button.setAttribute('aria-label', `颜色 ${color}`);
-      button.style.background = color; button.style.setProperty('--swatch', color); button.setAttribute('aria-pressed', String(color.toUpperCase() === state.color));
-      button.addEventListener('click', () => chooseColor(color)); container.append(button);
-    });
+    colors.forEach(color => container.append(colorButton(color, chooseColor)));
     container.hidden = !colors.length;
   }
+}
+async function showColorPicker() {
+  const picker = createColorPicker(state.color, readPreference('simplepaint.colorFormat', 'hex'), format => preference('simplepaint.colorFormat', format));
+  if (await ask({ heading: '更多颜色', content: picker.element, confirm: '应用' })) chooseColor(picker.color, true);
+}
+async function copyColor() {
+  try { await navigator.clipboard.writeText(colorDisplay === 'hex' ? state.color : `rgb(${colorValue()})`); toast('已复制色值'); }
+  catch { toast('无法访问系统剪贴板，请选中色值手动复制。'); }
 }
 function applyTheme(theme) {
   if (!['dark', 'light', 'system'].includes(theme)) theme = 'system';
@@ -257,7 +300,7 @@ function startGesture(event) {
   const p = point(event);
   if (state.tool === 'picker') {
     const pixel = ctx.getImageData(Math.floor(p.x), Math.floor(p.y), 1, 1).data;
-    chooseColor(pixel[3] ? '#' + Array.from(pixel.slice(0, 3), c => c.toString(16).padStart(2, '0')).join('') : '#FFFFFF', true); selectTool('brush'); return;
+    chooseColor(pixel[3] ? '#' + Array.from(pixel.slice(0, 3), c => c.toString(16).padStart(2, '0')).join('') : '#FFFFFF', true); return;
   }
   if (state.tool === 'fill') { floodFill(p); return; }
   if (state.tool === 'text') { void withBusy(() => insertText(p)); return; }
@@ -357,7 +400,7 @@ async function insertText(p) {
   const image = blank(width, height), context = image.getContext('2d');
   context.font = measure.font; context.fillStyle = state.color; context.textBaseline = 'top';
   lines.forEach((line, i) => context.fillText(line, 1, i * state.fontSize * 1.3));
-  change(() => ctx.drawImage(image, x, y)); selectTool('selection');
+  change(() => ctx.drawImage(image, x, y));
   state.selection = { x, y, w: width, h: height }; state.floating = { image, background }; update();
 }
 function crop() { if (state.selection) { const image = selectionImage(); change(() => setImage(image)); } }
@@ -379,18 +422,17 @@ function transform(kind) {
 }
 async function resize() {
   const content = document.createElement('div'); content.className = 'dialog-fields';
-  const width = document.createElement('input'), height = document.createElement('input'), scale = document.createElement('input');
+  const width = document.createElement('input'), height = document.createElement('input');
   for (const [name, input, value] of [['宽度', width, canvas.width], ['高度', height, canvas.height]]) {
     input.type = 'number'; input.min = '1'; input.max = '8192'; input.step = '1'; input.value = value; input.required = true;
     const label = document.createElement('label'); label.append(name, input); content.append(label);
   }
-  scale.type = 'checkbox'; const label = document.createElement('label'); label.className = 'checkbox-label'; label.append(scale, '同时缩放图片内容'); content.append(label);
-  content.append(paragraph('不缩放时，扩展部分为透明，缩小会裁去右侧和下方。'));
+  content.append(paragraph('原内容按原始像素贴在新画布左上角，超出右侧和下方的部分会裁掉。'));
   if (!await ask({ heading: '调整画布尺寸', content, confirm: '应用', validate: () => { validateSize(Number(width.value), Number(height.value)); return true; } })) return;
   if (Number(width.value) === canvas.width && Number(height.value) === canvas.height) return;
   change(() => {
-    const source = copyCanvas(), image = blank(Number(width.value), Number(height.value)), context = image.getContext('2d');
-    if (scale.checked) context.drawImage(source, 0, 0, image.width, image.height); else context.drawImage(source, 0, 0);
+    const source = copyCanvas(), image = blank(Number(width.value), Number(height.value), true), context = image.getContext('2d');
+    context.drawImage(source, 0, 0);
     setImage(image);
   });
 }
@@ -433,7 +475,7 @@ function showActions(anchor) {
   popover.style.left = `${Math.max(8, Math.min(innerWidth - popover.offsetWidth - 8, anchor.getBoundingClientRect().left - popover.offsetWidth - 8))}px`;
   popover.style.top = `${Math.max(8, Math.min(innerHeight - popover.offsetHeight - 8, anchor.getBoundingClientRect().top))}px`;
 }
-function selectAll() { selectTool('selection'); state.selection = { x: 0, y: 0, w: canvas.width, h: canvas.height }; update(); }
+function selectAll() { selectTool('selection'); state.floating = null; state.selection = { x: 0, y: 0, w: canvas.width, h: canvas.height }; update(); }
 
 const actions = {
   new: () => withBusy(newDocument), open: () => { finishGesture(); $('#file-input').click(); }, save: () => withBusy(save), undo, redo,
@@ -441,8 +483,9 @@ const actions = {
   crop, clear: () => withBusy(clear), rotate: () => transform('clockwise'), resize: () => withBusy(resize), actions: event => showActions(event.currentTarget),
 };
 for (const placeholder of document.querySelectorAll('[data-icon]')) placeholder.append(icon(placeholder.dataset.icon));
-for (const [selector, tools, compact] of [['#drawing-tools', drawingTools, false], ['#line-tools', [...basicLines, 'moreLines'], true], ['#shape-tools', [...basicShapes, 'more'], false]]) tools.forEach(tool => $(selector).append(toolButton(tool, compact)));
-for (const action of ['selection', 'crop', 'clear', 'rotate', 'resize', 'actions']) {
+drawingTools.forEach(tool => $('#drawing-tools').append(toolButton(tool)));
+renderToolGroups();
+for (const action of ['selection', 'crop', 'clear', 'rotate', 'actions']) {
   if (action === 'selection') { $('#canvas-actions').append(toolButton(action)); continue; }
   const button = document.createElement('button'); button.className = 'tool-button'; button.dataset.action = action; button.append(icon(action), title(action)); $('#canvas-actions').append(button);
 }
@@ -455,10 +498,21 @@ $('#dialog-cancel').addEventListener('click', () => $('#dialog').close('cancel')
 $('#size').addEventListener('input', event => { finishGesture(); state.size = Number(event.target.value); $('#size-value').value = `${state.size} px`; });
 $('#font-size').addEventListener('input', event => { state.fontSize = Number(event.target.value); $('#font-value').value = `${state.fontSize} px`; });
 $('#font-family').addEventListener('change', event => { state.font = event.target.value; });
-$('#color-picker').addEventListener('input', event => chooseColor(event.target.value));
-$('#color-picker').addEventListener('change', event => chooseColor(event.target.value, true));
-$('#more-colors').addEventListener('click', () => $('#color-picker').click());
-$('#hex').addEventListener('change', event => { if (!chooseColor('#' + event.target.value.replace(/^#/, ''), true)) { event.target.value = state.color; toast('请输入六位十六进制颜色，例如 #263843。'); } });
+$('#color-picker').addEventListener('click', () => void showColorPicker());
+$('#more-colors').addEventListener('click', () => void showColorPicker());
+$('#hex').addEventListener('change', event => {
+  let value = event.target.value.trim();
+  if (colorDisplay === 'rgb') {
+    const components = value.replace(/^rgb\(|\)$/gi, '').split(',').map(part => part.trim());
+    const parts = components.map(Number);
+    value = components.length === 3 && components.every(part => /^\d{1,3}$/.test(part)) && parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255) ? '#' + parts.map(part => part.toString(16).padStart(2, '0')).join('') : '';
+  } else value = '#' + value.replace(/^#/, '');
+  if (!chooseColor(value, true)) { refreshColorValue(); toast('请输入有效的 HEX 或 RGB 色值。'); }
+});
+$('#copy-color').addEventListener('click', () => void copyColor());
+for (const button of document.querySelectorAll('[data-color-display]')) button.addEventListener('click', () => {
+  colorDisplay = button.dataset.colorDisplay; preference('simplepaint.colorDisplay', colorDisplay); refreshColorValue();
+});
 $('#hex').addEventListener('keydown', event => { if (event.key === 'Enter') event.target.blur(); });
 $('#file-input').addEventListener('change', event => { const file = event.target.files[0]; event.target.value = ''; void openFile(file); });
 canvas.addEventListener('pointerdown', startGesture); canvas.addEventListener('pointermove', moveGesture);
@@ -494,12 +548,11 @@ document.addEventListener('keydown', event => {
   if (event.altKey) return;
   if (key === 'escape') { finishGesture(true); state.selection = null; state.floating = null; clearPreview(); update(); return; }
   if (['delete', 'backspace'].includes(key)) { event.preventDefault(); deleteSelection(); return; }
-  if (key === '[' || key === ']') { state.size = Math.max(1, Math.min(80, state.size + (key === '[' ? -1 : 1))); $('#size').value = state.size; $('#size-value').value = `${state.size} px`; return; }
   const tool = Object.keys(shortcuts).find(tool => shortcuts[tool].toLowerCase() === key);
   if (tool) { event.preventDefault(); selectTool(tool); }
 });
 window.addEventListener('beforeunload', event => { if (state.id !== state.savedId || state.gesture) { event.preventDefault(); event.returnValue = ''; } });
 
-state.recent = readPreference('simplepaint.colors', []).filter(value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)).slice(0, 3);
-applyTheme(readPreference('simplepaint.theme', 'system')); chooseColor(state.color); selectTool('brush');
+state.recent = readPreference('simplepaint.colors', []).filter(value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)).map(value => value.toUpperCase()).slice(0, 3);
+applyTheme(readPreference('simplepaint.theme', 'system')); chooseColor(state.color, false); selectTool('brush');
 resetDocument(blank(1200, 800, true), '未命名.png');

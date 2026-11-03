@@ -9,6 +9,16 @@ enum PaintTool: String, CaseIterable {
     case trapezoid, parallelogram, singleRoundedRectangle, chevron, blockArrow, leftArrow, upArrow, downArrow
     case heart, roundedBubble, ellipseBubble, thoughtBubble, cloud, cylinder, cube, cone
 
+    static let defaultLines: [PaintTool] = [.line, .dashedLine, .arrow, .dashedArrow, .dashDotLine]
+    static let defaultShapes: [PaintTool] = [.rectangle, .roundedRectangle, .ellipse, .ellipseBubble, .roundedBubble]
+    static var additionalLines: [PaintTool] {
+        [defaultLines[4]] + lineTools.filter { !defaultLines.contains($0) }
+    }
+    static var additionalShapes: [PaintTool] {
+        [defaultShapes[4]] + allShapes.filter { !defaultShapes.contains($0) }
+    }
+    static var allShapes: [PaintTool] { [.rectangle, .roundedRectangle, .ellipse] + extraShapes }
+
     static let bubbleShapes: [PaintTool] = [.roundedBubble, .ellipseBubble, .thoughtBubble]
     static let blockArrowShapes: [PaintTool] = [.blockArrow, .leftArrow, .upArrow, .downArrow]
     static let extraShapes: [PaintTool] = bubbleShapes + blockArrowShapes + [

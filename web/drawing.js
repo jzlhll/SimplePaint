@@ -1,6 +1,6 @@
 export const drawingTools = ['brush', 'pencil', 'eraser', 'fill', 'picker', 'text'];
-export const basicLines = ['line', 'dashedLine', 'arrow', 'doubleArrow', 'dashedArrow'];
-export const basicShapes = ['rectangle', 'roundedRectangle', 'ellipse', 'ellipseBubble', 'heart'];
+export const basicLines = ['line', 'dashedLine', 'arrow', 'dashedArrow', 'dashDotLine'];
+export const basicShapes = ['rectangle', 'roundedRectangle', 'ellipse', 'ellipseBubble', 'roundedBubble'];
 export const extraShapes = ['roundedBubble', 'ellipseBubble', 'thoughtBubble', 'hexagon', 'blockArrow', 'leftArrow', 'upArrow', 'downArrow', 'triangle', 'rightTriangle', 'diamond', 'pentagon', 'star', 'fourPointStar', 'sixPointStar', 'trapezoid', 'parallelogram', 'singleRoundedRectangle', 'chevron', 'heart', 'cloud', 'cylinder', 'cube', 'cone'];
 export const lineTools = ['line', 'dashedLine', 'dashDotLine', ...['', 'hollow', 'solid'].flatMap(style => ['', 'dashed', 'dashDot'].flatMap(dash => ['Arrow', 'DoubleArrow'].map(head => {
   const name = dash + (dash ? style.charAt(0).toUpperCase() + style.slice(1) : style) + head;
@@ -115,6 +115,7 @@ export function drawShape(ctx, tool, rect, color, width, filled) {
 }
 
 const icons = {
+  copy: 'M8 8h13v14H8zM16 8V2H2v14h6',
   plus: 'M12 4v16M4 12h16', minus: 'M4 12h16', folder: 'M3 7V5h7l2 2h9v13H3z M3 10h18', save: 'M5 11H3v10h18V11h-2M12 3v12m-4-4 4 4 4-4',
   undo: 'M8 5 3 10l5 5M3 10h11a6 6 0 0 1 0 12', redo: 'm16 5 5 5-5 5M21 10H10a6 6 0 0 0 0 12',
   brush: 'm10 14 8-12 4 2-8 12M10 14c-5-1-3 6-7 6 5 3 11 1 11-4z', pencil: 'm4 15 12-12 5 5L9 20l-7 2zM13 6l5 5M4 15l5 5',

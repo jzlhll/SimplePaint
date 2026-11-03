@@ -164,7 +164,7 @@ struct Bitmap: Equatable {
     }
 
     func resized(width: Int, height: Int, scaleImage: Bool) -> Bitmap {
-        var output = Bitmap(width: width, height: height, color: .clear)
+        var output = Bitmap(width: width, height: height, color: scaleImage ? .clear : .white)
         if scaleImage {
             let source = image
             output.draw { context in

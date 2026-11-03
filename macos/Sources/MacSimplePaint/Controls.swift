@@ -227,10 +227,10 @@ final class SwatchButton: NSButton {
     var swatch: NSColor?
     var selected = false { didSet { needsDisplay = true } }
     var handler: (() -> Void)?
-    init(color: NSColor?, size: CGFloat = 30) {
+    init(color: NSColor?, size: CGFloat = 30, stretchVertically: Bool = false) {
         swatch = color
         super.init(frame: .zero)
-        fixed(width: size, height: size)
+        fixed(width: size, height: stretchVertically ? nil : size)
         isBordered = false
         target = self
         action = #selector(invoke)
@@ -404,10 +404,14 @@ final class ShapeStyleControl: NSView {
         let outline = ShapeStyleButton(filled: false) { [weak self] in self?.select(filled: false) }
         let fill = ShapeStyleButton(filled: true) { [weak self] in self?.select(filled: true) }
         buttons = [outline, fill]
-        let row = stack(buttons, spacing: 4)
+        let row = stack(buttons, spacing: 8)
         row.distribution = .fillEqually
         addSubview(row)
-        row.pin(to: self)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            row.centerXAnchor.constraint(equalTo: centerXAnchor), row.topAnchor.constraint(equalTo: topAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor), row.widthAnchor.constraint(equalToConstant: 96)
+        ])
         buttons.forEach { $0.fixed(height: 46) }
         updateSelection()
     }

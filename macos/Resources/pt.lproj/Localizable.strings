@@ -2,7 +2,6 @@
 "移动选区" = "Mover seleção";
 "画笔 · 拖动开始绘画" = "Pincel · Arraste para desenhar";
 "⌘V 可直接粘贴图片" = "⌘V cola uma imagem";
-"按 [ / ] 调整笔画粗细" = "[ / ] ajusta a espessura do traço";
 "将图片拖入窗口即可打开" = "Arraste uma imagem para a janela para abri-la";
 "按住 Shift 约束形状比例或角度" = "Segure Shift para fixar proporções ou ângulos";
 "⌘Z 撤销，⇧⌘Z 重做" = "⌘Z desfaz; ⇧⌘Z refaz";
@@ -225,3 +224,8 @@
 "深色模式" = "Modo escuro";
 
 "浅色模式" = "Modo claro";
+
+"复制色值" = "Copiar cor";
+"色值格式" = "Formato de cor";
+"RGB 颜色" = "Cor RGB";
+"原内容按原始像素贴在新画布左上角，超出右侧和下方的部分会裁掉。" = "Os píxeis originais ficam no canto superior esquerdo. O conteúdo que ultrapassar os limites direito e inferior é cortado.";

@@ -2,21 +2,13 @@ import AppKit
 
 // 用同一套路径预览附加形状，选择后直接回到画布绘制。
 final class ShapePickerController: NSViewController {
-    init(selected: PaintTool, lines: Bool = false, onPick: @escaping (PaintTool) -> Void) {
+    init(selected: PaintTool, lines: Bool = false, tools: [PaintTool], onPick: @escaping (PaintTool) -> Void) {
         super.init(nibName: nil, bundle: nil)
         let root = NSView()
         let content = stack([label(L(lines ? "更多线条" : "更多形状"), size: 13, weight: .semibold)], vertical: true, spacing: 8)
-        let otherShapes = PaintTool.extraShapes
-            .dropFirst(PaintTool.bubbleShapes.count + PaintTool.blockArrowShapes.count)
-            .filter { $0 != .hexagon }
-        let geometryRows = stride(from: 0, to: otherShapes.count, by: 4).map {
-            Array(otherShapes[$0..<Swift.min($0 + 4, otherShapes.count)])
+        let rows = stride(from: 0, to: tools.count, by: 4).map {
+            Array(tools[$0..<Swift.min($0 + 4, tools.count)])
         }
-        let shapeRows = [PaintTool.bubbleShapes + [.hexagon]] + Array(geometryRows.prefix(1))
-            + [PaintTool.blockArrowShapes] + Array(geometryRows.dropFirst())
-        let rows = lines ? stride(from: 0, to: PaintTool.lineTools.count, by: 4).map {
-            Array(PaintTool.lineTools[$0..<Swift.min($0 + 4, PaintTool.lineTools.count)])
-        } : shapeRows
         for tools in rows {
             let row = stack(tools.map { tool -> NSView in
                 let button = ShapeChoiceButton(tool: tool, selected: selected == tool)
